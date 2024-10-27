@@ -1,0 +1,42 @@
+# Stage 1: Build environment (slim)
+FROM python:3.12.7-slim-bullseye AS builder
+
+# Set timezone
+ENV TZ=UTC+2
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends gcc netcat \
+    libpq5 build-essential libpq-dev nginx curl gdal-bin libgdal-dev
+
+# Install tools
+RUN pip3 install --progress-bar off --upgrade pip
+
+# Stage 2: Application build (smaller)
+FROM python:3.12.7-slim AS app
+
+# Install Pipenv, copy Pipfile and Pipfile.lock for dependency installation
+RUN pip3 install --progress-bar off pipenv
+COPY Pipfile Pipfile.lock ./
+
+# Install dependencies based on Pipfile
+WORKDIR /app
+RUN pipenv install --system --deploy
+
+# Copy application code
+COPY . .
+
+# Stage 3: Final image (production-ready)
+FROM app AS final
+
+# Set environment variables for GDAL
+ENV CPLUS_INCLUDE_PATH=/usr/include/gdal
+ENV C_INCLUDE_PATH=/usr/include/gdal
+
+# Add static files folder
+RUN mkdir /app/backend/staticfiles
+
+# Install development dependencies
+RUN pipenv install
+
+EXPOSE 8000

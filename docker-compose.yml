@@ -1,0 +1,74 @@
+services:
+  backend:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: ./docker/backend/Dockerfile
+    entrypoint: /app/docker/backend/entrypoint.sh
+    command: python manage.py runserver 0.0.0.0:8002
+    environment:
+      - MAP_QUEST_API_KEY=${MAP_QUEST_API_KEY}
+      - GDAL_LIBRARY_PATH=/usr/lib/libgdal.so
+      - GDAL_DATA=/usr/share/gdal
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - backend
+    ports:
+      - "8002:8002"
+      - "5678:5678"
+    expose:
+      - 8002
+    env_file:
+      - ./.env
+    volumes:
+      - static_volume:/app/static
+      - .:/app
+
+  db:
+    image: postgis/postgis:16-3.5-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=${DATABASE_USERNAME}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+      - POSTGRES_DB=${DATABASE_NAME}
+    ports:
+      - "5432:5432"
+    expose:
+      - 5432
+    volumes:
+      - db:/var/lib/postgresql/data
+      - ./docker/postgres/init-postgis.sql:/docker-entrypoint-initdb.d/init-postgis.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  redis:
+    restart: unless-stopped
+    image: redis:7.2.4-alpine
+    expose:
+      - 6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+volumes:
+  static_volume: {}
+  db: {}
+
+networks:
+  backend:
+    driver: bridge
